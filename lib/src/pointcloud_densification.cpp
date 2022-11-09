@@ -70,9 +70,9 @@ void PointCloudDensification::registerSweep(
   auto transform_world2current = getTransform(tf_buffer, header.frame_id, param_.world_frame_id(), header.stamp);
   if (!transform_world2current) { return; }
 
-  auto affine_world2current = transformToEigen(transform_world2current.get()); // TODO: reformat transform into cuda-friendly one
+  auto affine_world2current = transformToEigen(transform_world2current.get());
   
-  enqueue(pointcloud_msg, affine_world2current); // TODO: register new pointcloud
+  enqueue(pointcloud_msg, affine_world2current);
 }
 
 void PointCloudDensification::enqueue(
