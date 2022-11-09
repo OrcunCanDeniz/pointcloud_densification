@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="input/pointcloud" default="/lidar/concatenated/pointcloud"/>
+    <arg name="output/objects" default="objects"/>
+    <arg name="model_name" default="aip_x2"/> <!-- "options: `default` or `aip_x2` -->
+    <arg name="model_path" default="$(find pointcloud_densification)/data"/>
+    <arg name="model_param_path" default="$(find pointcloud_densification)/config/$(arg model_name).param.yaml"/>
+    <arg name="past_frames" default="4"/>
+
+    <node pkg="pointcloud_densification" type="densification_node" name="pointcloud_densification" output="screen">
+      <remap from="~/input/pointcloud" to="$(arg input/pointcloud)"/>
+      <remap from="~/output/objects" to="$(arg output/objects)"/>
+      <param name="score_threshold" value="0.45"/>
+      <param name="densification_world_frame_id" value="map"/>
+      <param name="densification_num_past_frames" value="$(arg past_frames)"/>
+    </node>
+
+</launch>
