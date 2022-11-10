@@ -16,12 +16,7 @@
 #define POINTCLOUD_DENSIFICATION_HPP_
 
 #include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
-
-#include <pcl/point_types.h>
-#include <pcl/filters/passthrough.h>
-#include <pcl/point_cloud.h>
+#include <eigen3/Eigen/Geometry>
 
 #include <sensor_msgs/PointCloud2.h>
 
@@ -33,9 +28,30 @@
 #include <string>
 #include <utility>
 
+#define FINAL_FT_NUM 4 // XYZI
+
+
+struct tf_time_t{
+    float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    float timelag = 0;
+    bool last = 0;
+
+    void setTf(float* data)
+    {
+      for(int i=0; i<16; i++)
+      {
+        transform[i] = data[i];
+      }
+    }
+    void setNewest()
+    {
+      last=true;
+    }
+};
+
 struct field_t
 {
-  uint8_t offset;
+  int offset;
   size_t len;
   uint32_t count;
 
@@ -102,8 +118,10 @@ private:
 struct Sweep
 {
   // Struct to hold a Lidar sweep and other necessities for densification
-  Sweep(uint8_t* data_ptr, double time, Eigen::Affine3f tf): data(data_ptr), time_secs(time), affine_past2world(tf){}
-  uint8_t* data;
+  Sweep(uint8_t* src_ptr, double time, Eigen::Affine3f tf, float* dst_ptr): 
+          src_data(src_ptr), time_secs(time), affine_past2world(tf), dst_data(dst_ptr){}
+  uint8_t* src_data;
+  float* dst_data;
   double time_secs;
   Eigen::Affine3f affine_past2world;
 };
@@ -120,7 +138,8 @@ public:
   void densify();
   void init(const sensor_msgs::PointCloud2::ConstPtr& pc_msg, const int& pc_size);
   void format(const sensor_msgs::PointCloud2::ConstPtr& pc_msg);
-  uint8_t* refreshCache();
+  std::pair<uint8_t*, float*>  refreshCache();
+  std::vector<float> getCloud();
   
   inline std::list<Sweep>::iterator getPointCloudCacheIter()
   {
@@ -137,6 +156,7 @@ public:
   void appendPclCloud(std::array<float, Config::num_point_features> point);
   sensor_msgs::PointCloud2 getDenseCloud();
   void clearPclCloud();
+  void dispatch( uint8_t* msg, float* dst, tf_time_t tf_str);
 
 private:
   void enqueue(const sensor_msgs::PointCloud2::ConstPtr & msg, const Eigen::Affine3f & affine);
@@ -147,7 +167,7 @@ private:
   double current_timestamp_{0.0};
   Eigen::Affine3f affine_world2current_;
   int num_points_{0}; // number of points in each poincloud msg, constant for data from same sensors
-  int point_step_{0}; // number of elements belonging to single point in the array
+  int point_step_{0}; // number of uint8_t elements belonging to single point in the array
   std::list<Sweep> pointcloud_cache_;
 
   std::map<std::string, field_t> field_to_dtype_m_;
@@ -156,9 +176,9 @@ private:
   //CUDA stuff
   uint8_t* msgs_buffer_d; 
   float* dns_buffer_d;
+  float* dst_h;
   std::vector<cudaStream_t> streams;
   
-  pcl::PointCloud<pcl::PointXYZI> dense_pcl_cloud;
 };
 
 }  // namespace centerpoint

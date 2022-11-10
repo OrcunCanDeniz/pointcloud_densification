@@ -17,7 +17,6 @@
 
 #include <boost/optional.hpp>
 
-#include <pcl_conversions/pcl_conversions.h>
 #include <tf2_eigen/tf2_eigen.h>
 
 #include <string>
@@ -80,62 +79,66 @@ void PointCloudDensification::enqueue(
 {
   affine_world2current_ = affine_world2current;
   
-  uint8_t* next_buffer = refreshCache(); // return pointer for new data, drop latest data in cache
-  
-  cudaMemcpyAsync(next_buffer, msg->data.data(), num_points_ * point_step_ * sizeof(uint8_t), cudaMemcpyHostToDevice); // load new data to gpu
-  pointcloud_cache_.emplace_front(next_buffer, ros::Time(msg->header.stamp).toSec(),
-                                       affine_world2current.inverse()); // add new sweep to front of the cache
+  std::pair<uint8_t*, float*> free_buffers = refreshCache(); // return pointer for new data, drop latest data in cache
+  current_timestamp_ = ros::Time(msg->header.stamp).toSec();
+  CHECK_CUDA_ERROR(cudaMemcpy(free_buffers.first, msg->data.data(), num_points_ * point_step_ * sizeof(uint8_t), cudaMemcpyHostToDevice)); // load new data to gpu
+  pointcloud_cache_.emplace_front(free_buffers.first, current_timestamp_,
+                                      affine_world2current.inverse(), free_buffers.second); // add new sweep to front of the cache
   densify();
 }
 
-uint8_t* PointCloudDensification::refreshCache()
+std::pair<uint8_t*, float*> PointCloudDensification::refreshCache()
 {
   // get next available pointer(holding outdated data) to hold newly arrived data
   // drop latest pointcloud
   static int registered_pc_num{0};
 
-  uint8_t* loc = msgs_buffer_d + (registered_pc_num % param_.cache_len()) 
-                  * num_points_ * point_step_;
+  const int cyclic_idx = registered_pc_num % param_.cache_len();
+  std::cout << cyclic_idx << std::endl;
+  uint8_t* src_loc = msgs_buffer_d + cyclic_idx * num_points_ * point_step_;
+  float* dst_loc = dns_buffer_d + cyclic_idx * num_points_ * FINAL_FT_NUM;
 
   if (pointcloud_cache_.size() == param_.cache_len())
   {
     pointcloud_cache_.pop_back();
   }
   registered_pc_num ++;
-  return loc;
+  return std::make_pair(src_loc, dst_loc);
 }
 
 void PointCloudDensification::densify()
 {
   for (auto cache_iter = getPointCloudCacheIter(); !isCacheEnd(cache_iter); cache_iter++) 
   {
-      const float timelag = static_cast<float>(getCurrentTimestamp() - cache_iter->time_secs);
-    // auto pc_msg = cache_iter->pointcloud_msg;
+    tf_time_t tf_time;
+    tf_time.timelag = static_cast<float>(getCurrentTimestamp() - cache_iter->time_secs);
     if (cache_iter != getPointCloudCacheIter()) // if not the last received cloud
     {
       auto affine_past2current = getAffineWorldToCurrent() * cache_iter->affine_past2world;
-      const float* tf_mat = affine_past2current.matrix().data();
-      // kernel<<<>>>(data_ptr, transform, timelag, fields)
-      // TODO: DISPATCH KERNEL THAT SETS TIMELAG AND TRANSFORMS
+      float* tf_mat = affine_past2current.matrix().data();
+      tf_time.setTf(tf_mat);
     } else {
-      std::cout<< "Newest one " <<std::endl; //Here for compilation 
-      // kernel<<<>>>(data_ptr, transform, timelag, fields)
-      // TODO: DISPATCH KERNEL THAT ONLY SETS TIMELAG
+      tf_time.setNewest();
     }
-    // The latest pointcloud does not need to be transformed. Just reformat and add time_lag
-
-    // std::cout << tf_mat[0] << " " << tf_mat[1] << " " << tf_mat[2] << " " << tf_mat[3] << std::endl;
-    // std::cout << tf_mat[4] << " " << tf_mat[5] << " " << tf_mat[6] << " " << tf_mat[7] << std::endl;
-    // std::cout << tf_mat[8] << " " << tf_mat[9] << " " << tf_mat[10] << " " << tf_mat[11] << std::endl;
-    // std::cout << tf_mat[12] << " " << tf_mat[13] << " " << tf_mat[14] << " " << tf_mat[15] << std::endl;
-    std::cout << "###############################" << std::endl;
+    dispatch(cache_iter->src_data, cache_iter->dst_data, tf_time); 
   }
+  cudaDeviceSynchronize();
+}
+
+std::vector<float> PointCloudDensification::getCloud()
+{
+  CHECK_CUDA_ERROR(cudaMemcpy(dst_h, dns_buffer_d, 
+                                  num_points_ * FINAL_FT_NUM  * sizeof(float) * param_.cache_len(),
+                                  cudaMemcpyDeviceToHost));
+
+  return std::vector<float>(dst_h, dst_h + num_points_ * FINAL_FT_NUM * param_.cache_len());
 }
 
 void PointCloudDensification::allocCuda(const int& point_step_bytes)
 {                                             // point_step: how many bytes does a point need
-  cudaMalloc((void**)&msgs_buffer_d, num_points_ * point_step_bytes * param_.cache_len());
-  cudaMalloc((void**)&dns_buffer_d, num_points_ * 5 /*XYZIT*/ * sizeof(float) * param_.cache_len());
+  CHECK_CUDA_ERROR(cudaMalloc((void**)&msgs_buffer_d, num_points_ * point_step_bytes * param_.cache_len()));
+  CHECK_CUDA_ERROR(cudaMalloc((void**)&dns_buffer_d, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
+  CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
 
   for (int i=0; i<param_.cache_len(); i++)
   {
@@ -159,26 +162,26 @@ void PointCloudDensification::dequeue()
   }
 }
 
-void PointCloudDensification::appendPclCloud(std::array<float, Config::num_point_features> point)
-{
-  pcl::PointXYZI pclPoint;
-  pclPoint.x = point.at(0);
-  pclPoint.y = point.at(1);
-  pclPoint.z = point.at(2);
-  pclPoint.intensity = point.at(3);
-  dense_pcl_cloud.push_back(pclPoint);
-}
+// void PointCloudDensification::appendPclCloud(std::array<float, Config::num_point_features> point)
+// {
+//   pcl::PointXYZI pclPoint;
+//   pclPoint.x = point.at(0);
+//   pclPoint.y = point.at(1);
+//   pclPoint.z = point.at(2);
+//   pclPoint.intensity = point.at(3);
+//   dense_pcl_cloud.push_back(pclPoint);
+// }
 
-sensor_msgs::PointCloud2 PointCloudDensification::getDenseCloud()
-{
-  sensor_msgs::PointCloud2 msg;
-  pcl::toROSMsg(dense_pcl_cloud, msg);
-  return msg;
-} 
+// sensor_msgs::PointCloud2 PointCloudDensification::getDenseCloud()
+// {
+//   sensor_msgs::PointCloud2 msg;
+//   pcl::toROSMsg(dense_pcl_cloud, msg);
+//   return msg;
+// } 
 
-void PointCloudDensification::clearPclCloud()
-{
-  dense_pcl_cloud.clear();
-}
+// void PointCloudDensification::clearPclCloud()
+// {
+//   dense_pcl_cloud.clear();
+// }
 
 }  // namespace centerpoint

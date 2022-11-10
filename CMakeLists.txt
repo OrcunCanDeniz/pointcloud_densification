@@ -65,12 +65,14 @@ endif()
   add_library(densification SHARED
     lib/src/pointcloud_densification.cpp
   )
+  cuda_add_library(densificationCUDA lib/src/kernels.cu)
 
   target_link_libraries(densification
     ${catkin_LIBRARIES}
     ${CUDA_LIBRARIES}
     ${CUBLAS_LIBRARIES}
     ${CUDA_curand_LIBRARY}
+    densificationCUDA
   )
 
   ## node ##

@@ -17,6 +17,8 @@
 // #include <autoware_utils/geometry/geometry.hpp>
 #include <config.hpp>
 #include <pcl_ros/transforms.h>
+#include <pcl_conversions/pcl_conversions.h>
+
 #include <pointcloud_densification.hpp>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -45,8 +47,7 @@ LidarCenterPointNode::LidarCenterPointNode():  nh_(""), pnh_("~"), tf_listener_(
   ROS_WARN("Ready for inference.");
 }
 
-void LidarCenterPointNode::pointCloudCallback(
-  const sensor_msgs::PointCloud2::ConstPtr pc_msg)
+void LidarCenterPointNode::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr pc_msg)
 {
   static const int pc_size = pc_msg->height * pc_msg->width;
   std::cout << "CB" << std::endl;
@@ -54,10 +55,41 @@ void LidarCenterPointNode::pointCloudCallback(
   if (!dns_p->initialized()) { dns_p->init(pc_msg, pc_size); }
   
   dns_p->registerSweep(pc_msg, tf_buffer_);
+
+  std::vector<float> points_flat = dns_p->getCloud();
+
+  pcl::PointCloud<pcl::PointXYZI> out_cloud;
+  for(int i=0; i<points_flat.size()/FINAL_FT_NUM; i++)
+  {
+    pcl::PointXYZI point_;
+    const int idx = i*FINAL_FT_NUM;
+    point_.x = points_flat[idx];
+    point_.y = points_flat[idx + 1];
+    point_.z = points_flat[idx + 2];
+    point_.intensity = points_flat[idx + 3];
+
+    if (point_.x + point_.y + point_.z != 0)
+    {
+      out_cloud.push_back(point_); // when this is active only one pointcloud of points are passing thru
+    }
+    // if (idx>1310700)
+    // {
+    //   std::cout << point_.x << " "
+    //             << point_.y << " "
+    //             << point_.z << " "
+    //             << point_.intensity << std::endl;
+    // }
+  }
+  
+  // std::cout << out_cloud.size() << std::endl; // 262144
+
+  sensor_msgs::PointCloud2 out_msg;
+  pcl::toROSMsg(out_cloud, out_msg);
+  out_msg.header = pc_msg->header;
+  pointcloud_pub_.publish(out_msg);
+
   // if (1 > 0) {
   //   sensor_msgs::PointCloud2 dense_msg = detector_ptr_->vg_ptr_->pd_ptr_->getDenseCloud();
-  //   dense_msg.header = input_pointcloud_msg->header;
-  //   pointcloud_pub_.publish(dense_msg);
   // }
 }
 
