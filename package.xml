@@ -2,9 +2,9 @@
 <package format="3">
   <name>pointcloud_densification</name>
   <version>1.0.0</version>
-  <description>The lidar_centerpoint package</description>
+  <description>Multi Sweep Aggregator CUDA</description>
 
-  <maintainer email="yusuke.muramatsu@tier4.jp">Yusuke Muramatsu</maintainer>
+  <maintainer email="orcun@adastec.com">Orcun</maintainer>
 
   <license>Apache License 2.0</license>
 

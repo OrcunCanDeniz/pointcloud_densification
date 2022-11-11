@@ -28,7 +28,7 @@
 #include <string>
 #include <utility>
 
-#define FINAL_FT_NUM 4 // XYZI
+#define FINAL_FT_NUM 4 // XYZT
 
 
 struct tf_time_t{

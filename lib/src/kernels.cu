@@ -33,6 +33,12 @@ __global__ void transform_set_time_kernel(uint8_t* msg, const int point_step, co
     const float3 point = atPC2(msg, point_step, x_offset, y_offset, z_offset, thread_ix); //decode PointCloud2 msg data
     const float3 transformed_point = transform(tf_time.transform, point);
 
+    if(transformed_point.x + transformed_point.y + transformed_point.z == 0 &&
+                                        point.x + point.y + point.z != 0)
+    {
+        printf("NOPE");
+    }
+
     dst[dst_point_offs] = transformed_point.x;
     dst[dst_point_offs + 1] = transformed_point.y;
     dst[dst_point_offs + 2] = transformed_point.z;

@@ -59,6 +59,7 @@ void PointCloudDensification::init(const sensor_msgs::PointCloud2::ConstPtr& pc_
   point_step_ = pc_msg->point_step / sizeof(uint8_t);
   format(pc_msg); // get description of pc msg to decode the uint8 array
   allocCuda(pc_msg->point_step);
+  is_init = true;
 }
 
 void PointCloudDensification::registerSweep(
@@ -81,7 +82,7 @@ void PointCloudDensification::enqueue(
   
   std::pair<uint8_t*, float*> free_buffers = refreshCache(); // return pointer for new data, drop latest data in cache
   current_timestamp_ = ros::Time(msg->header.stamp).toSec();
-  CHECK_CUDA_ERROR(cudaMemcpy(free_buffers.first, msg->data.data(), num_points_ * point_step_ * sizeof(uint8_t), cudaMemcpyHostToDevice)); // load new data to gpu
+  CHECK_CUDA_ERROR(cudaMemcpy(free_buffers.first, msg->data.data(), num_points_ * point_step_ , cudaMemcpyHostToDevice)); // load new data to gpu
   pointcloud_cache_.emplace_front(free_buffers.first, current_timestamp_,
                                       affine_world2current.inverse(), free_buffers.second); // add new sweep to front of the cache
   densify();
@@ -92,9 +93,8 @@ std::pair<uint8_t*, float*> PointCloudDensification::refreshCache()
   // get next available pointer(holding outdated data) to hold newly arrived data
   // drop latest pointcloud
   static int registered_pc_num{0};
-
   const int cyclic_idx = registered_pc_num % param_.cache_len();
-  std::cout << cyclic_idx << std::endl;
+
   uint8_t* src_loc = msgs_buffer_d + cyclic_idx * num_points_ * point_step_;
   float* dst_loc = dns_buffer_d + cyclic_idx * num_points_ * FINAL_FT_NUM;
 
@@ -136,8 +136,11 @@ std::vector<float> PointCloudDensification::getCloud()
 
 void PointCloudDensification::allocCuda(const int& point_step_bytes)
 {                                             // point_step: how many bytes does a point need
+std::cout << "allocating" << std::endl;
   CHECK_CUDA_ERROR(cudaMalloc((void**)&msgs_buffer_d, num_points_ * point_step_bytes * param_.cache_len()));
+  CHECK_CUDA_ERROR(cudaMemset(msgs_buffer_d, 1, num_points_ * point_step_bytes * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMalloc((void**)&dns_buffer_d, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
+  CHECK_CUDA_ERROR(cudaMemset(dns_buffer_d, 1, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
 
   for (int i=0; i<param_.cache_len(); i++)
