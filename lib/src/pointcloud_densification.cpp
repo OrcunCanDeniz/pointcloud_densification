@@ -1,18 +1,3 @@
-// Copyright 2021 Tier IV, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-#include <pcl_ros/transforms.h>
 #include <pointcloud_densification.hpp>
 
 #include <boost/optional.hpp>
@@ -48,7 +33,7 @@ Eigen::Affine3f transformToEigen(const geometry_msgs::Transform & t)
 
 }  // namespace
 
-namespace centerpoint
+namespace densifier
 {
 PointCloudDensification::PointCloudDensification(const DensificationParam & param) : param_(param)
 {}
@@ -115,8 +100,7 @@ void PointCloudDensification::densify()
     if (cache_iter != getPointCloudCacheIter()) // if not the last received cloud
     {
       auto affine_past2current = getAffineWorldToCurrent() * cache_iter->affine_past2world;
-      float* tf_mat = affine_past2current.matrix().data();
-      tf_time.setTf(tf_mat);
+      tf_time.setTf(affine_past2current.matrix().data());
     } else {
       tf_time.setNewest();
     }
@@ -135,12 +119,10 @@ std::vector<float> PointCloudDensification::getCloud()
 }
 
 void PointCloudDensification::allocCuda(const int& point_step_bytes)
-{                                             // point_step: how many bytes does a point need
-std::cout << "allocating" << std::endl;
+{ // point_step: how many bytes a point needs
   CHECK_CUDA_ERROR(cudaMalloc((void**)&msgs_buffer_d, num_points_ * point_step_bytes * param_.cache_len()));
-  CHECK_CUDA_ERROR(cudaMemset(msgs_buffer_d, 1, num_points_ * point_step_bytes * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMalloc((void**)&dns_buffer_d, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
-  CHECK_CUDA_ERROR(cudaMemset(dns_buffer_d, 1, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
+  CHECK_CUDA_ERROR(cudaMemset(dns_buffer_d, 0, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
 
   for (int i=0; i<param_.cache_len(); i++)
@@ -158,33 +140,4 @@ void PointCloudDensification::format(const sensor_msgs::PointCloud2::ConstPtr& p
   }
 }
 
-void PointCloudDensification::dequeue()
-{
-  if (pointcloud_cache_.size() > param_.cache_len()) {
-    pointcloud_cache_.pop_back();
-  }
-}
-
-// void PointCloudDensification::appendPclCloud(std::array<float, Config::num_point_features> point)
-// {
-//   pcl::PointXYZI pclPoint;
-//   pclPoint.x = point.at(0);
-//   pclPoint.y = point.at(1);
-//   pclPoint.z = point.at(2);
-//   pclPoint.intensity = point.at(3);
-//   dense_pcl_cloud.push_back(pclPoint);
-// }
-
-// sensor_msgs::PointCloud2 PointCloudDensification::getDenseCloud()
-// {
-//   sensor_msgs::PointCloud2 msg;
-//   pcl::toROSMsg(dense_pcl_cloud, msg);
-//   return msg;
-// } 
-
-// void PointCloudDensification::clearPclCloud()
-// {
-//   dense_pcl_cloud.clear();
-// }
-
-}  // namespace centerpoint
+}  // namespace densifier

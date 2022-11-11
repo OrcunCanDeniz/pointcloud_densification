@@ -1,17 +1,3 @@
-// Copyright 2021 Tier IV, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #ifndef POINTCLOUD_DENSIFICATION_HPP_
 #define POINTCLOUD_DENSIFICATION_HPP_
 
@@ -19,8 +5,6 @@
 #include <eigen3/Eigen/Geometry>
 
 #include <sensor_msgs/PointCloud2.h>
-
-#include "config.hpp"
 
 #include "cuda_utils.hpp"
 
@@ -32,17 +16,15 @@
 
 
 struct tf_time_t{
-    float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}; // column major
     float timelag = 0;
     bool last = 0;
 
     void setTf(float* data)
     {
-      for(int i=0; i<16; i++)
-      {
-        transform[i] = data[i];
-      }
+      memcpy(&transform, data, 16*sizeof(float));
     }
+
     void setNewest()
     {
       last=true;
@@ -96,7 +78,7 @@ struct field_t
   }
 };
 
-namespace centerpoint
+namespace densifier
 {
 class DensificationParam
 {
@@ -138,7 +120,7 @@ public:
   void densify();
   void init(const sensor_msgs::PointCloud2::ConstPtr& pc_msg, const int& pc_size);
   void format(const sensor_msgs::PointCloud2::ConstPtr& pc_msg);
-  std::pair<uint8_t*, float*>  refreshCache();
+  std::pair<uint8_t*, float*> refreshCache();
   std::vector<float> getCloud();
   
   inline std::list<Sweep>::iterator getPointCloudCacheIter()
@@ -153,9 +135,6 @@ public:
   
   inline bool initialized(){return is_init;}
 
-  void appendPclCloud(std::array<float, Config::num_point_features> point);
-  sensor_msgs::PointCloud2 getDenseCloud();
-  void clearPclCloud();
   void dispatch( uint8_t* msg, float* dst, tf_time_t tf_str);
 
 private:
@@ -178,9 +157,8 @@ private:
   float* dns_buffer_d;
   float* dst_h;
   std::vector<cudaStream_t> streams;
-  
 };
 
-}  // namespace centerpoint
+}  // namespace densifier
 
 #endif  // POINTCLOUD_DENSIFICATION_HPP_

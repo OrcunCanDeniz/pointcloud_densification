@@ -17,9 +17,7 @@ inline __device__ float3 transform(const float tf[16], const float3 point) // 4*
     const float x_ = point.x * tf[0] +  point.y * tf[4] + point.z * tf[8] + tf[12]; 
     const float y_ = point.x * tf[1] +  point.y * tf[5] + point.z * tf[9] + tf[13];
     const float z_ = point.x * tf[2] +  point.y * tf[6] + point.z * tf[10] + tf[14];
-    const float w_ = point.x * tf[3] +  point.y * tf[7] + point.z * tf[11] + tf[15];
-
-    return make_float3(x_/w_, y_/w_, z_/w_);
+    return make_float3(x_, y_, z_);
 }
 
 __global__ void transform_set_time_kernel(uint8_t* msg, const int point_step, const int num_points, const int x_offset, 
@@ -32,12 +30,6 @@ __global__ void transform_set_time_kernel(uint8_t* msg, const int point_step, co
     
     const float3 point = atPC2(msg, point_step, x_offset, y_offset, z_offset, thread_ix); //decode PointCloud2 msg data
     const float3 transformed_point = transform(tf_time.transform, point);
-
-    if(transformed_point.x + transformed_point.y + transformed_point.z == 0 &&
-                                        point.x + point.y + point.z != 0)
-    {
-        printf("NOPE");
-    }
 
     dst[dst_point_offs] = transformed_point.x;
     dst[dst_point_offs + 1] = transformed_point.y;
@@ -61,7 +53,7 @@ __global__ void set_time_kernel(uint8_t* msg, const int point_step, const int nu
     dst[dst_point_offs + 3] = tf_time.timelag;
 }
 
-namespace centerpoint
+namespace densifier
 {
     void PointCloudDensification::dispatch(uint8_t* msg, float* dst, tf_time_t tf_time)
     {
@@ -79,4 +71,4 @@ namespace centerpoint
                                             tf_time, dst);
         }
     }
-} // namespace centerpoint
+} // namespace densifier
