@@ -14,10 +14,10 @@ inline __device__ float3 atPC2(uint8_t* msg, const int point_step, const int x_o
 
 inline __device__ float3 transform(const float tf[16], const float3 point) // 4*4 x 4*1
 {
-    const float x_ = point.x * tf[0] +  point.y * tf[1] + point.z * tf[2] + tf[3]; 
-    const float y_ = point.x * tf[4] +  point.y * tf[5] + point.z * tf[6] + tf[7];
-    const float z_ = point.x * tf[8] +  point.y * tf[9] + point.z * tf[10] + tf[11];
-    const float w_ = point.x * tf[12] +  point.y * tf[13] + point.z * tf[14] + tf[15];
+    const float x_ = point.x * tf[0] +  point.y * tf[4] + point.z * tf[8] + tf[12]; 
+    const float y_ = point.x * tf[1] +  point.y * tf[5] + point.z * tf[9] + tf[13];
+    const float z_ = point.x * tf[2] +  point.y * tf[6] + point.z * tf[10] + tf[14];
+    const float w_ = point.x * tf[3] +  point.y * tf[7] + point.z * tf[11] + tf[15];
 
     return make_float3(x_/w_, y_/w_, z_/w_);
 }
