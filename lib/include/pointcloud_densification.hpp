@@ -14,6 +14,7 @@
 
 #define FINAL_FT_NUM 4 // XYZT
 
+#define DEBUG_OUT 0
 
 struct tf_time_t{
     float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}; // column major
@@ -124,7 +125,13 @@ public:
   void format(const sensor_msgs::PointCloud2::ConstPtr& pc_msg);
   std::pair<uint8_t*, float*> getBuffers(const int cyclic_idx);
   std::vector<float> getCloud();
+  void syncCuda();
   
+  inline float* getDenseBuffer()
+  {
+    return dns_buffer_d;
+  }
+
   inline std::list<Sweep>::iterator getPointCloudCacheIter()
   {
     return pointcloud_cache_.begin();

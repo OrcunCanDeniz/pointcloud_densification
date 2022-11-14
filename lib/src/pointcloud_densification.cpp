@@ -98,14 +98,10 @@ void PointCloudDensification::densify()
   {
     tf_time_t tf_time;
     tf_time.timelag = static_cast<float>(getCurrentTimestamp() - cache_iter->time_secs);
-    // if (cache_iter != getPointCloudCacheIter()) // if not the last received cloud
-    // {
-      auto affine_past2current = getAffineWorldToCurrent() * cache_iter->affine_past2world;
-      tf_time.setTf(affine_past2current.matrix().data());
-      launch_transform_set_time(cache_iter->src_data, cache_iter->dst_data, tf_time, cache_iter->id); 
-    // }
+    auto affine_past2current = getAffineWorldToCurrent() * cache_iter->affine_past2world;
+    tf_time.setTf(affine_past2current.matrix().data());
+    launch_transform_set_time(cache_iter->src_data, cache_iter->dst_data, tf_time, cache_iter->id); 
   }
-  // cudaDeviceSynchronize();
 }
 
 std::vector<float> PointCloudDensification::getCloud()
@@ -122,8 +118,10 @@ void PointCloudDensification::allocCuda(const int& point_step_bytes)
   CHECK_CUDA_ERROR(cudaMalloc((void**)&msgs_buffer_d, num_points_ * point_step_bytes * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMalloc((void**)&dns_buffer_d, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMemset(dns_buffer_d, 0, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
-  CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
-
+  #if DEBUG_OUT
+    CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
+  #endif
+  
   for (int i=0; i<num_streams; i++)
   {
     cudaStream_t stream_;
@@ -138,6 +136,14 @@ void PointCloudDensification::format(const sensor_msgs::PointCloud2::ConstPtr& p
   {
     field_t field_meta_(elem);
     field_to_dtype_m_.insert({elem.name, field_meta_});
+  }
+}
+
+void PointCloudDensification::syncCuda()
+{
+  for (int i=0; i<num_streams; i++)
+  {
+    cudaStreamSynchronize(streams.at(i));
   }
 }
 

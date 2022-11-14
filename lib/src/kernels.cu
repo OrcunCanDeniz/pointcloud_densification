@@ -60,7 +60,7 @@ namespace densifier
         const dim3 block(1024);
         dim3 grid(ceil(num_points_/1024));
         
-        transform_set_time_kernel<<<grid, block, 0, streams.at(idx%2)>>>(msg, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
+        transform_set_time_kernel<<<grid, block, 0, streams.back()>>>(msg, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
                                         field_to_dtype_m_["y"].offset, field_to_dtype_m_["z"].offset,
                                         tf_time, dst);
     }

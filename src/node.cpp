@@ -21,8 +21,9 @@ DensifierNode::DensifierNode():  nh_(""), pnh_("~"), tf_listener_(tf_buffer_)
   dns_p = std::make_unique<PointCloudDensification>(densification_param);
 
   pointcloud_sub_ = pnh_.subscribe("/lidar/concatenated/pointcloud", 1, &DensifierNode::pointCloudCallback, this);
+#if DEBUG_OUT
   pointcloud_pub_ = pnh_.advertise<sensor_msgs::PointCloud2>("debug/pointcloud_densification", 1);
-
+#endif
   ROS_WARN("Ready");
 }
 
@@ -34,8 +35,8 @@ void DensifierNode::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr 
   
   dns_p->registerSweep(pc_msg, tf_buffer_);
 
+#if DEBUG_OUT
   std::vector<float> points_flat = dns_p->getCloud();
-
   pcl::PointCloud<pcl::PointXYZI> out_cloud;
   for(int i=0; i<points_flat.size()/FINAL_FT_NUM; i++)
   {
@@ -52,6 +53,7 @@ void DensifierNode::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr 
   pcl::toROSMsg(out_cloud, out_msg);
   out_msg.header = pc_msg->header;
   pointcloud_pub_.publish(out_msg);
+#endif
 }
 
 }  // namespace densifier
