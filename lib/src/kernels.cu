@@ -38,10 +38,10 @@ __global__ void transform_set_time_kernel(uint8_t* msg, const int point_step, co
 }
 
 __global__ void set_time_kernel(uint8_t* msg, const int point_step, const int num_points, const int x_offset, 
-    const int y_offset, const int z_offset, tf_time_t tf_time, float* dst)
+    const int y_offset, const int z_offset, const int points_in_chunk, float* dst)
 {
     const int thread_ix = blockIdx.x * blockDim.x + threadIdx.x;
-    if (thread_ix > num_points) {return;} 
+    if (thread_ix > points_in_chunk) {return;} 
 
     const int dst_point_offs = thread_ix * FINAL_FT_NUM;
 
@@ -50,25 +50,51 @@ __global__ void set_time_kernel(uint8_t* msg, const int point_step, const int nu
     dst[dst_point_offs] = point.x;
     dst[dst_point_offs + 1] = point.y;
     dst[dst_point_offs + 2] = point.z;
-    dst[dst_point_offs + 3] = tf_time.timelag;
+    dst[dst_point_offs + 3] = 0.0f;
 }
 
 namespace densifier
 {
-    void PointCloudDensification::dispatch(uint8_t* msg, float* dst, tf_time_t tf_time)
+    void PointCloudDensification::launch_transform_set_time(uint8_t* msg, float* dst, tf_time_t tf_time, int& idx)
     {
-        dim3 block(1024);
+        const dim3 block(1024);
         dim3 grid(ceil(num_points_/1024));
         
-        if (tf_time.last)
-        { // do not transform latest pointcloud 
-            set_time_kernel<<<grid, block>>>(msg, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
-                                                field_to_dtype_m_["y"].offset, field_to_dtype_m_["z"].offset,
-                                                tf_time, dst);
-        } else {
-            transform_set_time_kernel<<<grid, block>>>(msg, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
-                                            field_to_dtype_m_["y"].offset, field_to_dtype_m_["z"].offset,
-                                            tf_time, dst);
+        transform_set_time_kernel<<<grid, block, 0, streams.at(idx%2)>>>(msg, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
+                                        field_to_dtype_m_["y"].offset, field_to_dtype_m_["z"].offset,
+                                        tf_time, dst);
+    }
+
+    void PointCloudDensification::toCuda(uint8_t* msg_src, uint8_t* msg_dst, float* out_d)
+    {
+        // do not transform latest pointcloud
+        const dim3 block(1024);
+        const int max_points_in_chunk = ceil(num_points_ / num_streams-1);
+        const int num_chunks = ceil(num_points_/max_points_in_chunk);
+        int remaining_points = num_points_;
+        
+        for (int i=0; i<num_streams-1; i++)
+        {
+            int points_in_chunk{0};
+            if (remaining_points >= max_points_in_chunk)
+            {
+                points_in_chunk = max_points_in_chunk;
+                remaining_points -= points_in_chunk;
+            } else {
+                points_in_chunk = remaining_points;
+            }
+
+            const dim3 grid(ceil(points_in_chunk/1024));
+            const int batch_step_msg =  i * max_points_in_chunk * point_step_;
+            const int batch_step_dst =  i * max_points_in_chunk * FINAL_FT_NUM;
+            uint8_t* msg_h = msg_src + batch_step_msg;
+            uint8_t* msg_d = msg_dst + batch_step_msg;
+            float* dst_loc = out_d + batch_step_dst;
+            // load new data to gpu
+            CHECK_CUDA_ERROR(cudaMemcpyAsync(msg_d, msg_h, points_in_chunk * point_step_ , cudaMemcpyHostToDevice, streams.at(i))); 
+            set_time_kernel<<<grid, block, 0, streams.at(i)>>>(msg_d, point_step_, num_points_, field_to_dtype_m_["x"].offset, 
+                                                                field_to_dtype_m_["y"].offset, field_to_dtype_m_["z"].offset,
+                                                                points_in_chunk, dst_loc);
         }
     }
 } // namespace densifier

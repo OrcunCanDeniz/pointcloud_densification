@@ -100,11 +100,13 @@ private:
 struct Sweep
 {
   // Struct to hold a Lidar sweep and other necessities for densification
-  Sweep(uint8_t* src_ptr, double time, Eigen::Affine3f tf, float* dst_ptr): 
-          src_data(src_ptr), time_secs(time), affine_past2world(tf), dst_data(dst_ptr){}
+  Sweep(uint8_t* src_ptr, double time, Eigen::Affine3f tf, int idx, float* dst_ptr): 
+          src_data(src_ptr), time_secs(time), affine_past2world(tf),
+          id(idx), dst_data(dst_ptr){}
   uint8_t* src_data;
   float* dst_data;
   double time_secs;
+  int id;
   Eigen::Affine3f affine_past2world;
 };
 
@@ -120,7 +122,7 @@ public:
   void densify();
   void init(const sensor_msgs::PointCloud2::ConstPtr& pc_msg, const int& pc_size);
   void format(const sensor_msgs::PointCloud2::ConstPtr& pc_msg);
-  std::pair<uint8_t*, float*> refreshCache();
+  std::pair<uint8_t*, float*> getBuffers(const int cyclic_idx);
   std::vector<float> getCloud();
   
   inline std::list<Sweep>::iterator getPointCloudCacheIter()
@@ -135,7 +137,8 @@ public:
   
   inline bool initialized(){return is_init;}
 
-  void dispatch( uint8_t* msg, float* dst, tf_time_t tf_str);
+  void toCuda(uint8_t* msg_src, uint8_t* msg_dst, float* out_d);
+  void launch_transform_set_time(uint8_t* msg, float* dst, tf_time_t tf_time, int& idx);
 
 private:
   void enqueue(const sensor_msgs::PointCloud2::ConstPtr & msg, const Eigen::Affine3f & affine);
@@ -156,6 +159,7 @@ private:
   uint8_t* msgs_buffer_d; 
   float* dns_buffer_d;
   float* dst_h;
+  const int num_streams{4}; // 4 copy, 1 execution streams
   std::vector<cudaStream_t> streams;
 };
 

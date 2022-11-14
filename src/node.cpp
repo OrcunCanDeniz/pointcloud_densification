@@ -12,7 +12,7 @@ namespace densifier
 DensifierNode::DensifierNode():  nh_(""), pnh_("~"), tf_listener_(tf_buffer_)
 {
   pnh_.param<std::string>("densification_world_frame_id", densification_world_frame_id, "map");
-  pnh_.param<int>("densification_num_past_frames", densification_num_past_frames, 1);
+  pnh_.param<int>("densification_num_past_frames", densification_num_past_frames, 2);
 
   ROS_INFO_STREAM("densification_world_frame_id: " << densification_world_frame_id);
   ROS_INFO_STREAM("densification_num_past_frames: " << densification_num_past_frames);
@@ -20,7 +20,7 @@ DensifierNode::DensifierNode():  nh_(""), pnh_("~"), tf_listener_(tf_buffer_)
 
   dns_p = std::make_unique<PointCloudDensification>(densification_param);
 
-  pointcloud_sub_ = pnh_.subscribe("input/pointcloud", 1, &DensifierNode::pointCloudCallback, this);
+  pointcloud_sub_ = pnh_.subscribe("/lidar/concatenated/pointcloud", 1, &DensifierNode::pointCloudCallback, this);
   pointcloud_pub_ = pnh_.advertise<sensor_msgs::PointCloud2>("debug/pointcloud_densification", 1);
 
   ROS_WARN("Ready");

@@ -63,22 +63,24 @@ void PointCloudDensification::registerSweep(
 void PointCloudDensification::enqueue(
   const sensor_msgs::PointCloud2::ConstPtr& msg, const Eigen::Affine3f & affine_world2current)
 {
+  static int registered_pc_num{0};
+  const int cyclic_idx = registered_pc_num % param_.cache_len();
+
   affine_world2current_ = affine_world2current;
   
-  std::pair<uint8_t*, float*> free_buffers = refreshCache(); // return pointer for new data, drop latest data in cache
+  std::pair<uint8_t*, float*> free_buffers = getBuffers(cyclic_idx); // return pointer for new data, drop latest data in cache
   current_timestamp_ = ros::Time(msg->header.stamp).toSec();
-  CHECK_CUDA_ERROR(cudaMemcpy(free_buffers.first, msg->data.data(), num_points_ * point_step_ , cudaMemcpyHostToDevice)); // load new data to gpu
-  pointcloud_cache_.emplace_front(free_buffers.first, current_timestamp_,
-                                      affine_world2current.inverse(), free_buffers.second); // add new sweep to front of the cache
+  toCuda((uint8_t*)msg->data.data(), free_buffers.first, free_buffers.second);
+  pointcloud_cache_.emplace_front(free_buffers.first, current_timestamp_, affine_world2current.inverse(),
+                                      cyclic_idx, free_buffers.second); // add new sweep to front of the cache
+  registered_pc_num ++;
   densify();
 }
 
-std::pair<uint8_t*, float*> PointCloudDensification::refreshCache()
+std::pair<uint8_t*, float*> PointCloudDensification::getBuffers(const int cyclic_idx)
 {
   // get next available pointer(holding outdated data) to hold newly arrived data
   // drop latest pointcloud
-  static int registered_pc_num{0};
-  const int cyclic_idx = registered_pc_num % param_.cache_len();
 
   uint8_t* src_loc = msgs_buffer_d + cyclic_idx * num_points_ * point_step_;
   float* dst_loc = dns_buffer_d + cyclic_idx * num_points_ * FINAL_FT_NUM;
@@ -87,26 +89,23 @@ std::pair<uint8_t*, float*> PointCloudDensification::refreshCache()
   {
     pointcloud_cache_.pop_back();
   }
-  registered_pc_num ++;
   return std::make_pair(src_loc, dst_loc);
 }
 
 void PointCloudDensification::densify()
 {
-  for (auto cache_iter = getPointCloudCacheIter(); !isCacheEnd(cache_iter); cache_iter++) 
+  for (auto cache_iter = std::next(getPointCloudCacheIter()); !isCacheEnd(cache_iter); cache_iter++) 
   {
     tf_time_t tf_time;
     tf_time.timelag = static_cast<float>(getCurrentTimestamp() - cache_iter->time_secs);
-    if (cache_iter != getPointCloudCacheIter()) // if not the last received cloud
-    {
+    // if (cache_iter != getPointCloudCacheIter()) // if not the last received cloud
+    // {
       auto affine_past2current = getAffineWorldToCurrent() * cache_iter->affine_past2world;
       tf_time.setTf(affine_past2current.matrix().data());
-    } else {
-      tf_time.setNewest();
-    }
-    dispatch(cache_iter->src_data, cache_iter->dst_data, tf_time); 
+      launch_transform_set_time(cache_iter->src_data, cache_iter->dst_data, tf_time, cache_iter->id); 
+    // }
   }
-  cudaDeviceSynchronize();
+  // cudaDeviceSynchronize();
 }
 
 std::vector<float> PointCloudDensification::getCloud()
@@ -125,9 +124,11 @@ void PointCloudDensification::allocCuda(const int& point_step_bytes)
   CHECK_CUDA_ERROR(cudaMemset(dns_buffer_d, 0, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
   CHECK_CUDA_ERROR(cudaMallocHost((void**)&dst_h, num_points_ * FINAL_FT_NUM * sizeof(float) * param_.cache_len()));
 
-  for (int i=0; i<param_.cache_len(); i++)
+  for (int i=0; i<num_streams; i++)
   {
-    streams.emplace_back();
+    cudaStream_t stream_;
+    cudaStreamCreate(&stream_);
+    streams.push_back(stream_);
   }
 }
 

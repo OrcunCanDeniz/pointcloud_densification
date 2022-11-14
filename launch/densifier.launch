@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="input/pointcloud" default="/lidar/parent/points_raw"/>
-    <arg name="past_frames" default="4"/>
+    <arg name="input/pointcloud" default="/lidar/concatenated/pointcloud"/>
+    <arg name="past_frames" default="2"/>
 
     <node pkg="pointcloud_densification" type="densification_node" name="pointcloud_densification" output="screen">
-      <remap from="~/input/pointcloud" to="$(arg input/pointcloud)"/>
+      <remap from="/lidar/concatenated/pointcloud" to="$(arg input/pointcloud)"/>
       <param name="densification_world_frame_id" value="map"/>
       <param name="densification_num_past_frames" value="$(arg past_frames)"/>
     </node>
