@@ -14,7 +14,7 @@
 
 #define FINAL_FT_NUM 4 // XYZT
 
-#define DEBUG_OUT 0
+#define DEBUG_OUT 1
 
 struct tf_time_t{
     float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}; // column major

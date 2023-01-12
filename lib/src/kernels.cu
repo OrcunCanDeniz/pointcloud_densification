@@ -72,8 +72,8 @@ namespace densifier
         const int max_points_in_chunk = ceil(num_points_ / num_streams-1);
         const int num_chunks = ceil(num_points_/max_points_in_chunk);
         int remaining_points = num_points_;
-        
-        for (int i=0; i<num_streams-1; i++)
+        // split input into batches then process those batches 
+        for (int i=0; i<num_chunks; i++)
         {
             int points_in_chunk{0};
             if (remaining_points >= max_points_in_chunk)
